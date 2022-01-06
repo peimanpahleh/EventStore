@@ -88,7 +88,6 @@ namespace EventStore.Core.Services.Storage {
 			_thread.Name = Name;
 			_thread.Start();
 		}
-
 		public void Handle(SystemMessage.SystemStart message) {
 			_systemStarted = true;
 		}

@@ -1406,7 +1406,7 @@ namespace EventStore.Core {
 				} else {
 					_mainQueue.Publish(new AuthenticationMessage.AuthenticationProviderInitialized());
 				}
-			});
+			});.ConfigureAwait(false);
 		}
 
 		public void AddTasks(IEnumerable<Task> tasks) {

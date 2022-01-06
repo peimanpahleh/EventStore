@@ -10,10 +10,10 @@ using EventStore.Core.Messaging;
 using EventStore.Core.Tests.Services.Transport.Tcp;
 
 namespace EventStore.Core.Tests.ClientOperations {
-	public abstract class specification_with_bare_vnode<TLogFormat, TStreamId> : IPublisher, ISubscriber, IDisposable {
+	public abstract class specification_with_bare_vnode<TLogFormat, TStreamId> : IPublisher, ISubscriber {
 		private ClusterVNode _node;
 		private readonly List<IDisposable> _disposables = new List<IDisposable>();
-		public void CreateTestNode() {
+		protected async Task CreateTestNode() {
 			var logFormatFactory = LogFormatHelper<TLogFormat, TStreamId>.LogFormatFactory;
 			_node = new ClusterVNode<TStreamId>(new ClusterVNodeOptions()
 					.RunInMemory()
@@ -21,7 +21,7 @@ namespace EventStore.Core.Tests.ClientOperations {
 						ssl_connections.GetServerCertificate()), logFormatFactory,
 				new AuthenticationProviderFactory(c => new InternalAuthenticationProviderFactory(c)),
 				new AuthorizationProviderFactory(c => new LegacyAuthorizationProviderFactory(c.MainQueue)));
-			_node.StartAsync(true).Wait();
+			await _node.StartAsync(true).ConfigureAwait(false);
 		}
 		public void Publish(Message message) {
 			_node.MainQueue.Handle(message);
@@ -60,22 +60,11 @@ namespace EventStore.Core.Tests.ClientOperations {
 				} catch (Exception) { /* ignore*/}
 			}
 		}
-		#region IDisposable Support
-		private bool _disposed;
-		protected virtual void Dispose(bool disposing) {
-			if (!_disposed) {
-				if (disposing) {					
-					_disposables?.ForEach(d => d?.Dispose());
-					_disposables?.Clear();
-					_node?.StopAsync().Wait();
-				}				
-				_disposed = true;
-			}
-		}
 
-		public void Dispose() {
-			Dispose(true);
+		protected async Task StopTestNode() {
+			_disposables?.ForEach(d => d?.Dispose());
+			_disposables?.Clear();
+			await (_node?.StopAsync(TimeSpan.FromSeconds(20))!).ConfigureAwait(false);
 		}
-		#endregion
 	}
 }

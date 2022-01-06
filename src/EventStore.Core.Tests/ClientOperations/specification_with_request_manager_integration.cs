@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Threading;
+using System.Threading.Tasks;
 using EventStore.Core.Bus;
 using EventStore.Core.Messages;
 using EventStore.Core.Messaging;
@@ -21,8 +22,8 @@ namespace EventStore.Core.Tests.ClientOperations {
 		protected abstract Message When();
 
 		[SetUp]
-		public void Setup() {
-			CreateTestNode();
+		public async Task Setup() {
+			await CreateTestNode();
 			Envelope = new FakeEnvelope();
 
 			foreach (var m in WithInitialMessages()) {
@@ -35,5 +36,9 @@ namespace EventStore.Core.Tests.ClientOperations {
 			Publish(When());
 		}
 
+		[TearDown]
+		public async Task TearDown() {
+			await StopTestNode();
+		}
 	}
 }
