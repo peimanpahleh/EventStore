@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using EventStore.Common.Utils;
 using EventStore.Core.Services;
+using EventStore.Core.TransactionLog.LogRecords;
+using EventStore.LogCommon;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -50,6 +52,31 @@ namespace EventStore.Core.Data {
 				MaxCount, MaxAge, TruncateBefore, TempStream, CacheControl, Acl);
 		}
 
+		//qq consider name
+		public static StreamMetadata TryFromJsonBytes(IPrepareLogRecord prepare) {
+			try {
+				var metadata = FromJsonBytes(prepare.Data);
+				// upgrade the metadata from v0 if necessary
+				if (prepare.Version == LogRecordVersion.LogRecordV0 && metadata.TruncateBefore == int.MaxValue) {
+					metadata = new StreamMetadata(
+						maxCount: metadata.MaxCount,
+						maxAge: metadata.MaxAge,
+						truncateBefore: EventNumber.DeletedStream,
+						tempStream: metadata.TempStream,
+						cacheControl: metadata.CacheControl,
+						acl: metadata.Acl);
+				}
+
+				return metadata;
+			} catch (Exception) {
+				// this can happen if the json is malformed, or if any of the things that we expect to be longs are better than longs
+				// which can happen if you try to set something to long.maxvalue in the webui because javascript translates
+				// it into a number that is bigger than long.max
+				//qq better log something
+				return Empty;
+			}
+		}
+
 		public static StreamMetadata FromJsonBytes(ReadOnlyMemory<byte> json) {
 			using (var reader = new JsonTextReader(new StreamReader(new MemoryStream(json.ToArray())))) {
 				return FromJsonReader(reader);
@@ -83,19 +110,19 @@ namespace EventStore.Core.Data {
 					case SystemMetadata.MaxCount: {
 						Check(reader.Read(), reader);
 						Check(JsonToken.Integer, reader);
-						maxCount = (long)reader.Value;
+						maxCount = (long)reader.Value;  //qq possible bad cast from biginteger
 						break;
 					}
 					case SystemMetadata.MaxAge: {
 						Check(reader.Read(), reader);
 						Check(JsonToken.Integer, reader);
-						maxAge = TimeSpan.FromSeconds((long)reader.Value);
+						maxAge = TimeSpan.FromSeconds((long)reader.Value);  //qq possible bad cast from biginteger
 						break;
 					}
 					case SystemMetadata.TruncateBefore: {
 						Check(reader.Read(), reader);
 						Check(JsonToken.Integer, reader);
-						truncateBefore = (long)reader.Value;
+						truncateBefore = (long)reader.Value; //qq possible bad cast from biginteger
 						break;
 					}
 					case SystemMetadata.TempStream: {
@@ -107,7 +134,7 @@ namespace EventStore.Core.Data {
 					case SystemMetadata.CacheControl: {
 						Check(reader.Read(), reader);
 						Check(JsonToken.Integer, reader);
-						cacheControl = TimeSpan.FromSeconds((long)reader.Value);
+						cacheControl = TimeSpan.FromSeconds((long)reader.Value); //qq possible bad cast from biginteger
 						break;
 					}
 					case SystemMetadata.Acl: {
