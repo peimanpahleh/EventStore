@@ -7,6 +7,7 @@ using EventStore.Core.TransactionLog.LogRecords;
 
 namespace EventStore.Core.TransactionLog.Scavenging {
 	public class InMemoryAccumulator<TStreamId> : IAccumulator<TStreamId> {
+		//qq prolly want to use the chunk bulk reader in here to avoid having to instantiate the records
 		//qq what state does this want to accumulate
 		private readonly Dictionary<TStreamId, StreamData> _dict = new(EqualityComparer<TStreamId>.Default);
 		private readonly IMetastreamLookup<TStreamId> _metastreamLookup;

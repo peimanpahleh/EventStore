@@ -77,8 +77,9 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 					// is enabled)
 					// which ones are otherwise in danger of removing all the events?
 					//  hard deleted?
-					throw new Exception("panic"); //qq dont panic
+					throw new Exception("panic"); //qq dont panic really shouldn't
 				}
+
 
 
 				fromEventNumber += slice.Length;

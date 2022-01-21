@@ -7,6 +7,11 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 	//qq consider the name
 	public interface IScavenger {
 		void Start();
+		//qq options
+		// - timespan, or datetime to autostop
+		// - chunk to scavenge up to
+		// - effective 'now'
+		// - remove open transactions : bool
 		void Stop();
 	}
 
@@ -80,7 +85,10 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		//qq keep per stream the earliest event that we want to keep
 		// will this work for the duplicate events out of order bug where there is an extra event 0 later on
 		// or will we need to adapt for that, or detect it and complain, or assume it is rectified in advance
+		//qqq it might be nicer if this was a position but that might not work because of the above bug
 		IDictionary<TStreamId, long> EarliestEventsToKeep { get; set; } //qq name
+
+		//qqqqqqqqqqqqqqqqqq to figure out if it might be better to explicitly write down all the event positions to keep/discard
 	}
 
 	//qq consider if we want to use this readonly pattern for the scavenge instructions too
@@ -120,7 +128,7 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 
 	public record StreamData {
 		public static StreamData Empty = new();
-		//qq if we got rid of acl etc, then this could be a fixed size. just maxcount, maxage, tb
+		//qq this would just want to be maxcount, maxage, tb to be fixed size
 		public StreamMetadata Metadata { get; init; }
 		public bool IsHardDeleted { get; init; }
 	}
