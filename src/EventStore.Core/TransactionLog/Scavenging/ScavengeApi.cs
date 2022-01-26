@@ -22,6 +22,8 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		void Stop();
 	}
 
+	// the accumulator reads through the log up to the scavenge point
+	// its purpose is to scope down to the streams that might need scavenging.
 	public interface IAccumulator<TStreamId> {
 		void Accumulate(ScavengePoint scavengePoint);
 		//qq got separate apis for adding and getting state cause they'll probably be done
@@ -30,8 +32,13 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 	}
 
 	//qqqq consider api. consider name
-	//qq this takes the accumulated scavenge state and uses it, in combination with the
-	// index/log/etc to calculate what to scavenge per chunk.
+	//qq calculates the discardpoint for each relevant streams.
+	// we don't calculate this during the accumulation phase because the decisionpoints would keep
+	// moving as we go (e.g. time is passing for maxage, new events would move the dp on maxcount streams)
+	// so to avoid doing duplicate work we dont do that until calculation phase.
+	// it also means the accumulator only needs to actually process a small amount of data in the log.
+	// the structure this produces is enough to quickly scavenge the chunks and ptables without
+	// (typically) doing any further lookups or calculation.
 	public interface ICalculator<TStreamId> {
 		// processed so far.
 		void Calculate(ScavengePoint scavengePoint, IScavengeState<TStreamId> source);
@@ -40,9 +47,14 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		IScavengeInstructions<TStreamId> ScavengeInstructions { get; }
 	}
 
+	// the executor does the actual removal of the log records and index records
+	// should be very rare to do any further lookups at this point.
 	public interface IExecutor<TStreamId> {
-		void Execute(IScavengeInstructions<TStreamId> instructions);
+		void ExecuteChunks(IScavengeInstructions<TStreamId> instructions);
+		void ExecuteIndex(IScavengeInstructions<TStreamId> instructions);
 	}
+
+
 
 
 
@@ -88,12 +100,11 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 
 	// when scavenging we dont need all the data for a record
 	//qq but we do need more data than this
+	// but the bytes can just be bytes, in the end we are going to keep it or discard it.
+	//qq recycle this record like the recordforaccumulation?
 	public class RecordForScavenge<TStreamId> {
-		private readonly TStreamId _streamId;
-
-		public RecordForScavenge(TStreamId streamId) {
-			_streamId = streamId;
-		}
+		public TStreamId StreamId { get; set; }
+		public long EventNumber { get; set; }
 	}
 
 
@@ -118,47 +129,32 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		//qqqqq is chunknumber the logical chunk number?
 		//qq do we want to store a separate file per logical chunk or per physical (merged) chunk.
 		IEnumerable<IReadOnlyChunkScavengeInstructions<TStreamId>> ChunkInstructionss { get; }
-
-		IIndexScavengeInstructions IndexInstructions { get; }
+		//qq this isn't quite it, prolly need stream name
+		bool TryGetDiscardPoint(TStreamId streamId, out DiscardPoint discardPoint);
 	}
 
 	// instructions (see above) for scavenging a particular chunk.
 	public interface IReadOnlyChunkScavengeInstructions<TStreamId> {
 		int ChunkNumber { get; } //qq logical or phsyical?
 
-		//qq or long? necessarily bytes or rather accumulated weight, or maybe it can jsut be approx.
+		//qq int or long? necessarily bytes or rather accumulated weight, or maybe it can jsut be approx.
 		// maybe just event count will be sufficient if it helps us to not look up records
 		// currently we have to look them up anyway for hash collisions, so just run with that.
 		// later we may switch to record count if it helps save lookups - or the index may even be able to
 		// imply the size of the record (approximately?) once we have the '$all' stream index.
-		int BytesToSave { get; }
-
-		//qq keep per stream the earliest event that we want to keep
-		// will this work for the duplicate events out of order bug where there is an extra event 0 later on
-		// or will we need to adapt for that, or detect it and complain, or assume it is rectified in advance
-		//qqq it might be nicer if this was a position but that might not work because of the above bug
-		//
-		//qqqqq hmm we probably dont want to build a separate one of these for each chunk.
-		IDictionary<TStreamId, long> EarliestEventsToKeep { get; set; } //qq name
-
-		//qqqqqqqqqqqqqqqqqq to figure out if it might be better to explicitly write down all the event positions to keep/discard
+		int NumRecordsToDiscard { get; }
 	}
 
 	//qq consider if we want to use this readonly pattern for the scavenge instructions too
 	public interface IChunkScavengeInstructions<TStreamId> : IReadOnlyChunkScavengeInstructions<TStreamId> {
 		// we call this for each event that we want to discard
 		// probably it is better to list what we want to discard rather than what we want to keep
-		//qq position or event number.. this will become clearer when we come to consume it.
+		// because in a well scavenged log we will want to keep more than we want to remove
+		// in a typical scavenge.
+
+		//qqqqqq position or event number.. this will become clearer when we come to consume it.
 		// the position is more useful to the index
 		void Discard(TStreamId streamId, long position, int sizeInbytes);
-	}
-
-
-	public interface IIndexScavengeInstructions {
-		//qq not per ptable because they change, but this could store something
-		// to make it more efficient to scavenge a ptable. 
-		// we might want to scavenge the ptable as its own operation, or we might want
-		// to fold it into the merge since thats when we are going 
 	}
 
 	//qq name

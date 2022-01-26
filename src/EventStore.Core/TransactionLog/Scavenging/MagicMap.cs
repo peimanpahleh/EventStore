@@ -4,6 +4,11 @@ using EventStore.Core.Index.Hashes;
 namespace EventStore.Core.TransactionLog.Scavenging {
 	public readonly struct DiscardPoint {
 		public readonly long Value;
+
+		//qq depends on whether the DP is the first event to keep
+		// or the last event to discard. which in turn will depend on which is easier to generate
+		public bool ShouldDiscard(long eventNumber) =>
+			eventNumber < Value;
 	}
 
 	public readonly struct StreamHash {
@@ -67,21 +72,16 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 
 	// Then the executor:
 
-	public interface IMagicForScavengingChunk {
+	public interface IMagicForExecutor {
 		bool IsCollision(StreamHash streamHash);
 		DiscardPoint GetDiscardPoint(StreamName streamName);
-	}
-
-	public interface IMagicForScavengingPtable {
-		bool IsCollision(StreamHash streamHash);
 		DiscardPoint GetDiscardPoint(StreamHash streamHash);
 	}
 
 	public class MagicMap :
 		IMagicForAccumulator,
 		IMagicForCalculator,
-		IMagicForScavengingChunk,
-		IMagicForScavengingPtable {
+		IMagicForExecutor {
 
 		//qq private readonly Dictionary<long, long> _dict;
 		private readonly ILongHasher<long> _hasher;

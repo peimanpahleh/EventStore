@@ -83,7 +83,10 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 
 	public class MockChunkReaderForScavenge : IChunkReaderForScavenge<string> {
 		public IEnumerable<RecordForScavenge<string>> Read(TFChunk chunk) {
-			yield return new("thestream");
+			yield return new() {
+				StreamId = "thestream",
+				EventNumber = 123,
+			};
 		}
 	}
 

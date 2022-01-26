@@ -13,15 +13,18 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 			_dict.Select(kvp => (kvp.Key, kvp.Value));
 	}
 
+	//qq this may end up being a wrapper around the magic map and not a memory specific implementation
+	// at all.
+	//qq instructions are not necessarily the right name for this now.
 	public class InMemoryScavengeInstructions<TStreamId> : IScavengeInstructions<TStreamId> {
 		public InMemoryScavengeInstructions() {
 		}
 
-		public IEnumerable<IReadOnlyChunkScavengeInstructions<TStreamId>> ChunkInstructionss =>
-			throw new System.NotImplementedException();
+		public IEnumerable<IReadOnlyChunkScavengeInstructions<TStreamId>> ChunkInstructionss => throw new System.NotImplementedException();
 
-		public IIndexScavengeInstructions IndexInstructions =>
+		public bool TryGetDiscardPoint(TStreamId streamId, out DiscardPoint discardPoint) {
 			throw new System.NotImplementedException();
+		}
 	}
 
 	public class InMemoryChunkScavengeInstructions<TStreamId> : IChunkScavengeInstructions<TStreamId> {
@@ -32,7 +35,7 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 			set => throw new System.NotImplementedException();
 		}
 
-		public int BytesToSave { get; private set; }
+		public int NumRecordsToDiscard { get; private set; }
 
 		public void Discard(TStreamId streamId, long position, int sizeInbytes) {
 			throw new System.NotImplementedException();
