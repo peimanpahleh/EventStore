@@ -1178,7 +1178,10 @@ namespace EventStore.Core {
 					new InMemoryScavenger<TStreamId>(
 						Db,
 						_readIndex,
-						logFormat.Metastreams));
+						logFormat.Metastreams,
+						new MockChunkManagerForScavenge(),
+						logFormat.ChunkReaderForAccumulation,
+						logFormat.ChunkReaderForScavenge));
 
 				_mainBus.Subscribe<ClientMessage.ScavengeDatabase>(storageScavenger);
 				_mainBus.Subscribe<ClientMessage.StopDatabaseScavenge>(storageScavenger);

@@ -2,20 +2,28 @@
 using System.Collections.Generic;
 using EventStore.Core.Data;
 using EventStore.Core.LogAbstraction;
+using EventStore.Core.TransactionLog.Chunks.TFChunk;
 
 namespace EventStore.Core.TransactionLog.Scavenging {
 	//qq consider the name
 	public interface IScavenger {
+		//qq probably we want this to continue a previous scavenge if there is one going,
+		// or start a new one otherwise.
 		void Start();
 		//qq options
 		// - timespan, or datetime to autostop
 		// - chunk to scavenge up to
 		// - effective 'now'
 		// - remove open transactions : bool
+
+		//qq probably we want this to pause a scavenge if there is one going,
+		// otherwise probably do nothing.
+		// in this way the user sticks with the two controls that they had before: start and stop.
 		void Stop();
 	}
 
-	public interface IAccumulator<TStreamId> : INameIndexConfirmer<TStreamId> {
+	public interface IAccumulator<TStreamId> {
+		void Accumulate(ScavengePoint scavengePoint);
 		//qq got separate apis for adding and getting state cause they'll probably be done
 		// by different logical processes
 		IScavengeState<TStreamId> ScavengeState { get; }
@@ -38,11 +46,55 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 
 
 
+	public interface IChunkManagerForScavenge {
+		TFChunk SwitchChunk(TFChunk chunk, bool verifyHash, bool removeChunksWithGreaterNumbers);
+		TFChunk GetChunk(int logicalChunkNum);
+	}
 
+	//qq there are a couple of places we need to read chunks.
+	// 1. during accumulation we need the metadata records and the timestamp of the first record in the
+	//    chunk. i wonder if we should use the bulk reader.
+	public interface IChunkReaderForAccumulation<TStreamId> {
+		IEnumerable<RecordForAccumulator<TStreamId>> Read(
+			int startFromChunk,
+			ScavengePoint scavengePoint);
+	}
 
+	//qq could use streamdata? its a class though
+	public abstract class RecordForAccumulator<TStreamId> {
+		//qq make sure to recycle these.
+		//qq prolly have readonly interfaces to implement, perhaps a method to return them for reuse
+		public class TombStone : RecordForAccumulator<TStreamId> {
+			public TStreamId StreamId { get; set; }
+		}
 
+		public class TimeStampMarker : RecordForAccumulator<TStreamId> {
+			public int ChunkNumber { get; set; }
+			public DateTime CreatedAt { get; set; }
+		}
 
+		public class Metadata : RecordForAccumulator<TStreamId> {
+			public TStreamId StreamId { get; set; }
+		}
+	}
 
+	// 2. during calculation we want to know the record sizes to determine space saving.
+	//      unless we just skip this and approximate it with a record count.
+	// 3. when scavenging a chunk we need to read records out of it any copy
+	//    the ones we are keeping into the new chunk
+	public interface IChunkReaderForScavenge<TStreamId> {
+		IEnumerable<RecordForScavenge<TStreamId>> Read(TFChunk chunk);
+	}
+
+	// when scavenging we dont need all the data for a record
+	//qq but we do need more data than this
+	public class RecordForScavenge<TStreamId> {
+		private readonly TStreamId _streamId;
+
+		public RecordForScavenge(TStreamId streamId) {
+			_streamId = streamId;
+		}
+	}
 
 
 
@@ -51,6 +103,7 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 	// calculated based on what we can glean by tailing the log,
 	// without doubling up on what we can easily look up later.
 	public interface IScavengeState<TStreamId> {
+		//
 		IEnumerable<(TStreamId, StreamData)> RelevantStreams { get; }
 	}
 
@@ -70,8 +123,6 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 	}
 
 	// instructions (see above) for scavenging a particular chunk.
-	//
-	// 
 	public interface IReadOnlyChunkScavengeInstructions<TStreamId> {
 		int ChunkNumber { get; } //qq logical or phsyical?
 
@@ -86,6 +137,8 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		// will this work for the duplicate events out of order bug where there is an extra event 0 later on
 		// or will we need to adapt for that, or detect it and complain, or assume it is rectified in advance
 		//qqq it might be nicer if this was a position but that might not work because of the above bug
+		//
+		//qqqqq hmm we probably dont want to build a separate one of these for each chunk.
 		IDictionary<TStreamId, long> EarliestEventsToKeep { get; set; } //qq name
 
 		//qqqqqqqqqqqqqqqqqq to figure out if it might be better to explicitly write down all the event positions to keep/discard
@@ -93,6 +146,8 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 
 	//qq consider if we want to use this readonly pattern for the scavenge instructions too
 	public interface IChunkScavengeInstructions<TStreamId> : IReadOnlyChunkScavengeInstructions<TStreamId> {
+		// we call this for each event that we want to discard
+		// probably it is better to list what we want to discard rather than what we want to keep
 		//qq position or event number.. this will become clearer when we come to consume it.
 		// the position is more useful to the index
 		void Discard(TStreamId streamId, long position, int sizeInbytes);
@@ -127,9 +182,12 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 	}
 
 	public record StreamData {
-		public static StreamData Empty = new();
-		//qq this would just want to be maxcount, maxage, tb to be fixed size
-		public StreamMetadata Metadata { get; init; }
+		public static StreamData Empty = new(); //qq maybe dont need
+
+		public long? MaxCount { get; init; }
+		public TimeSpan? MaxAge { get; init; }
+		public long? TruncateBefore { get; init; }
+		//qq public long MetadataPosition { get; init; } //qq to be able to scavenge the metadata
 		public bool IsHardDeleted { get; init; }
 	}
 

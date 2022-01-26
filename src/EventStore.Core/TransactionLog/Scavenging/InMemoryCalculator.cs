@@ -99,19 +99,17 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 			// but we could say when we are calculating a stream, we could also calculate and discard
 			// things from its metadta stream
 
-			var metadata = streamData.Metadata;
-
 			//qq check/test these carefully obviously
 			if (DiscardBecauseHardDeleted(streamData, evt))
 				return false;
 
-			if (IsExpiredByTruncateBefore(metadata, evt))
+			if (IsExpiredByTruncateBefore(streamData, evt))
 				return false;
 
-			if (IsExpiredByMaxAge(scavengePoint, metadata, evt))
+			if (IsExpiredByMaxAge(scavengePoint, streamData, evt))
 				return false;
 
-			if (IsExpiredByMaxCount(scavengePoint, streamId, metadata, evt))
+			if (IsExpiredByMaxCount(scavengePoint, streamId, streamData, evt))
 				return false;
 
 			return true;
@@ -126,43 +124,43 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		}
 
 		static bool IsExpiredByTruncateBefore(
-			StreamMetadata metadata,
+			StreamData streamData,
 			EventRecord evt) {
 
-			if (metadata.TruncateBefore == null)
+			if (streamData.TruncateBefore == null)
 				return false;
 
-			var expired = evt.EventNumber < metadata.TruncateBefore.Value;
+			var expired = evt.EventNumber < streamData.TruncateBefore.Value;
 			return expired;
 		}
 
 		static bool IsExpiredByMaxAge(
 			ScavengePoint scavengePoint,
-			StreamMetadata metadata,
+			StreamData streamData,
 			EventRecord evt) {
 
-			if (metadata.MaxAge == null)
+			if (streamData.MaxAge == null)
 				return false;
 
-			var expires = evt.TimeStamp + metadata.MaxAge;
+			var expires = evt.TimeStamp + streamData.MaxAge;
 			return expires <= scavengePoint.EffectiveNow;
 		}
 
 		bool IsExpiredByMaxCount(
 			ScavengePoint scavengePoint,
 			TStreamId streamId,
-			StreamMetadata metadata,
+			StreamData streamData,
 			EventRecord evt) {
 
-			if (metadata.MaxCount == null)
+			if (streamData.MaxCount == null)
 				return false;
 
 			// say evt.EventNumber is 3
-			// and metadata.MaxCount = 2
+			// and streamData.MaxCount = 2
 			// then this event will expire when we write event number 5
 			// because the live events at that point will be events 4 and 5.
 
-			var expires = evt.EventNumber + metadata.MaxCount;
+			var expires = evt.EventNumber + streamData.MaxCount;
 
 			//qq the stream really should exist but what will happen here if it doesn't
 			//qqqq we're going to hit this a lot, some kind of cache would be in order

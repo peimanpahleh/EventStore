@@ -1,5 +1,18 @@
-﻿namespace EventStore.Core.TransactionLog.Scavenging {
+﻿using System;
+using EventStore.Core.TransactionLog.Chunks;
+
+namespace EventStore.Core.TransactionLog.Scavenging {
 	public class InMemoryExecutor<TStreamId> : IExecutor<TStreamId> {
+		private readonly IChunkManagerForScavenge _chunkManager;
+		private readonly IChunkReaderForScavenge<TStreamId> _chunkReader;
+		public InMemoryExecutor(
+			IChunkManagerForScavenge chunkManager,
+			IChunkReaderForScavenge<TStreamId> chunkReader) {
+
+			_chunkManager = chunkManager;
+			_chunkReader = chunkReader;
+		}
+
 		public void Execute(IScavengeInstructions<TStreamId> instructions) {
 			foreach (var chunkInstructions in instructions.ChunkInstructionss) {
 				ExecuteChunk(chunkInstructions);
@@ -43,13 +56,27 @@
 			 *  - could chase the calculated checkpoint if it only flushes when it has a full chunk's worth to keep after scavenging
 			 */
 
-//			monday //qqq
+			//			monday //qqq
 			// 1. open the chunk, probably with the bulk reader
-			// 2. read through it, keeping and discarding as necessary. probably no additional lookups at this point
-			// 3. write the posmap
-			// 4. finalise the chunk
-			// 5. swap it in to the chunkmanager
 
+			//qq do this with a strategy so we can plug bulk reader in.
+			
+			//qq is the one in the chunkinstructions a logical chunk number or physical?
+			// if physical, then we can get the physical chunk from the chunk manager and process it
+			// if logical then bear in mind that the chunk we get from the chunk manager is the whole physical file
+			var chunk = _chunkManager.GetChunk(chunkInstructions.ChunkNumber);
+
+			//var newChunk = ???;
+
+			//foreach (var record in _chunkReader.Read(chunk)) {
+
+			//	chunkInstructions.EarliestEventsToKeep
+			//}
+			//// 2. read through it, keeping and discarding as necessary. probably no additional lookups at this point
+			//// 3. write the posmap
+			//// 4. finalise the chunk
+			//// 5. swap it in to the chunkmanager
+			//_chunkManager.SwitchChunk();
 		}
 	}
 }
