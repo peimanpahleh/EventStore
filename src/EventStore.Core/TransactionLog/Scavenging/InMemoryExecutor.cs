@@ -44,6 +44,11 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 			// knowing the numrecordstodiscard could be useful here, if we are just discarding a small
 			// number then we'd probably pad them with gone events instead of adding a posmap.
 
+			// in here could also be a reasonable place to do a best effort at removing commit records
+			// if all the prepares for the commit are in this chunk (typically the case) and they are all
+			// scavenged, then we can remove the commit as well i think. this is probably what the old
+			// scavenge does. check
+
 			/* Set a scavenge point
 			 * scavenge range or time
 			 * keep scavenging until scavenge point is hit

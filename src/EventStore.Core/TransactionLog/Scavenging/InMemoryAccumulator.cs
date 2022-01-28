@@ -24,6 +24,8 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 
 
 		public void Accumulate(ScavengePoint scavengePoint) {
+			//qq we do need to do something for _every_ record so that we can get a full list of the hash collisions.
+
 			var records = _reader.Read(startFromChunk: 0, scavengePoint);
 			foreach (var record in records) {
 				switch (record) {
