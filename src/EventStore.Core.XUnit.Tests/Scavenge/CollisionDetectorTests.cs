@@ -77,17 +77,23 @@ namespace EventStore.Core.XUnit.Tests.Scavenge {
 		public void Works(string caseName, (string StreamName, string[] NewCollisions)[] data) {
 			Assert.NotNull(caseName);
 
+			var log = data.Select(x => x.StreamName).ToArray();
 			var hasher = new MockHahser();
 
+			// index maps hashes to lists of log positions
 			var index = new Dictionary<ulong, List<int>>();
-			for (var i = 0; i < data.Length; i++) {
-				var streamName = data[i].StreamName;
+
+			// populate the index
+			for (var i = 0; i < log.Length; i++) {
+				var streamName = log[i];
 				var hash = hasher.Hash(streamName);
 				if (!index.TryGetValue(hash, out var entries)) {
 					entries = new();
 					index[hash] = entries;
 				}
-				entries.Add(i);
+
+				// which order is more realistic? this way shows the need for filtering by position anyway
+				entries.Insert(0, i);
 			}
 
 			// maps hashes to stream names
@@ -96,11 +102,11 @@ namespace EventStore.Core.XUnit.Tests.Scavenge {
 			// simulates looking in the index for records with the current hash up to
 			// the all stream positionLimit. exclude the positionLimit itself because that is the
 			// position of the record that the hash came from.
-			//qq the index version of this wont be that expensive, but wont be that cheap either
-			// and we'll be calling it for every record. so we could definitely do with a cache
+			// irl this isn't _that_ expensive, but wont be that cheap either
+			// and we'll be calling it for ~every record. so we could definitely do with a cache
 			// as long as that doesn't break any of the properties that we require
-			bool HashInUse(string streamName, long positionLimit, out string candidateCollidee) {
-				var hash = hasher.Hash(streamName);
+			bool HashInUseBefore(string recordStream, long recordPosition, out string candidateCollidee) {
+				var hash = hasher.Hash(recordStream);
 
 				if (cache.TryGetValue(hash, out candidateCollidee))
 					return true;
@@ -109,22 +115,26 @@ namespace EventStore.Core.XUnit.Tests.Scavenge {
 				// then look up the record for one of them to get the stream name
 				if (index.TryGetValue(hash, out var entries)) {
 					foreach (var entry in entries) {
-						if (entry < positionLimit) {
-							var candidate = data[entry].StreamName;
-							candidateCollidee = candidate;
-							cache[hash] = candidate;
+						// filtering to those entries less than recordPosition is important
+						// for case (2a)
+						if (entry < recordPosition) {
+							candidateCollidee = log[entry];
+							cache[hash] = candidateCollidee;
 							return true;
 						}
 					}
 				}
 
-				cache[hash] = streamName;
+				// we can cache this entry because the next time this method is called
+				// the recordPosition will definitely be greater than it is this time
+				// so there is no danger of returning this result when it should have
+				// been excluded by the position filter.
+				cache[hash] = recordStream;
 				candidateCollidee = default;
 				return false;
 			}
 
-			var sut = new CollisionDetector<string>(HashInUse);
-
+			var sut = new CollisionDetector<string>(HashInUseBefore);
 
 			var expectedCollisions = new HashSet<string>();
 

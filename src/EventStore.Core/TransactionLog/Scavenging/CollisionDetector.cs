@@ -5,12 +5,12 @@ using System.Linq;
 namespace EventStore.Core.TransactionLog.Scavenging {
 	// add things to the collision detector and it keeps a list of things that collided.
 	public class CollisionDetector<T> where T : IEquatable<T> {
-		// checks if the hash is in use before the position. returns true if so.
+		// checks if the hash is in use before this item at this position. returns true if so.
 		// if returning true then out parameter is one of the items that hashes to that hash
-		public delegate bool HashInUse(T item, long positionLimit, out T candidateCollidee);
+		public delegate bool HashInUseBefore(T item, long itemPosition, out T candidateCollidee);
 
 		private static EqualityComparer<T> TComparer { get; } = EqualityComparer<T>.Default;
-		private readonly HashInUse _hashInUse;
+		private readonly HashInUseBefore _hashInUseBefore;
 
 		// store the values. could possibly store just the hashes instead but that would
 		// lose us information and it should be so rare that there are any collisions at all.
@@ -20,9 +20,9 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		//qq will need something like this to tell where to continue from. maybe not in this class though
 		private long _lastPosition;
 
-		public CollisionDetector(HashInUse hashInUse) {
+		public CollisionDetector(HashInUseBefore hashInUseBefore) {
 			_collisions = new();
-			_hashInUse = hashInUse;
+			_hashInUseBefore = hashInUseBefore;
 		}
 
 		public bool IsCollision(T item) => _collisions.Contains(item);
@@ -38,6 +38,7 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		//       b. it was not a collision but has since been collided with by a newer stream.
 		//           - when it was collided with we noticed and added it to the collision list so
 		//             we conclude it is still a collision now
+		//             TICK
 		//             NB: it is important that we added this stream to the collision list. consider:
 		//                 if we look in the index to see if there are any entries for this hash
 		//                 there would be, because this is the collision case
@@ -47,6 +48,7 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		//                 or not. BAD.
 		//       c. it was not a collision and still isn't
 		//           - so we look in the index to see if there are any entries for this hash
+		//             in the log _before_ this item.
 		//             there are, because we have seen this stream before
 		//             all the entries are for this stream, but we only want to check one.
 		//             so we check one, and we find that it is for this stream
@@ -56,15 +58,15 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		//   2. this is the first time we are seeing this stream.
 		//       then either:
 		//       a. it collides with any stream we have seen before
-		//           i. it collides with 1 stream that hasnt been in a collision up til now
-		//           ii. it collides with 2+ streams that are already colliding with each other.
-		//           both of these cases are handled in the same way below. but if we stored the hash we
-		//           could handle (ii) differently but super rare so dont bother
 		//           - so we look in the index to see if there are any entries for this hash
+		//             in the log _before_ this item.
 		//             there are, because this is the colliding case.
 		//             we pick any entry and look up the record
 		//             the record MUST be for a different stream because this is the the first time
-		//                we are seeing this stream.
+		//                we are seeing this stream and we carefully excluded ourselves from the
+		//                index search. (if we didn't do that then we could have found a record for
+		//                our own stream here and not been able to distinguish this case from 1c
+		//                based on looking up a single record.
 		//             collision detected.
 		//             add both streams to the collision list. we have their names and the hash.
 		//             BUT is it possible that we are colliding with multiple streams, do we need to add
@@ -77,24 +79,24 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		//                not collde.
 		//             conclude no collision
 		//             TICK
-		public void Add(T item, long position) {
-			_lastPosition = position;
+		public void Add(T item, long itemPosition) {
+			_lastPosition = itemPosition;
 
 			if (IsCollision(item)) {
-				return; // previously known collision.
+				return; // previously known collision. 1a or 1b.
 			}
 
 			// collision not previously known, but might be a new one now.
-			if (!_hashInUse(item, position, out var candidateCollidee)) {
-				return; // hash not in use, can be no collision.
+			if (!_hashInUseBefore(item, itemPosition, out var candidateCollidee)) {
+				return; // hash not in use, can be no collision. 2b
 			}
 
 			// hash in use, but maybe by the item itself.
 			if (TComparer.Equals(candidateCollidee, item)) {
-				return; // no collision with oneself
+				return; // no collision with oneself. 1c
 			}
 
-			// hash in use by a different item! found new collision.
+			// hash in use by a different item! found new collision. 2a
 			_collisions.Add(item);
 			_collisions.Add(candidateCollidee);
 		}
