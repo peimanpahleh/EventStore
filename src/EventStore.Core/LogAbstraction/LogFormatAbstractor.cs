@@ -44,6 +44,7 @@ namespace EventStore.Core.LogAbstraction {
 			return new LogFormatAbstractor<string>(
 				lowHasher: lowHasher,
 				highHasher: highHasher,
+				longHasher : longHasher,
 				streamNameIndex: streamNameIndex,
 				streamNameIndexConfirmer: streamNameIndex,
 				eventTypeIndex: eventTypeIndex,
@@ -117,10 +118,11 @@ namespace EventStore.Core.LogAbstraction {
 
 			var eventTypeIndexPersistence = GenEventTypeIndexPersistence(options);
 			var eventTypeIndex = GenEventTypeIndex(eventTypeIndexPersistence);
-			
+
 			var abstractor = new LogFormatAbstractor<LogV3StreamId>(
 				lowHasher: new IdentityLowHasher(),
 				highHasher: new IdentityHighHasher(),
+				longHasher: new IdentityLongHasher(),
 				streamNameIndex: new StreamNameIndexMetastreamDecorator(streamNameIndex, metastreams),
 				streamNameIndexConfirmer: streamNameIndex,
 				eventTypeIndex: new EventTypeIndexSystemTypesDecorator(eventTypeIndex),
@@ -238,6 +240,7 @@ namespace EventStore.Core.LogAbstraction {
 		public LogFormatAbstractor(
 			IHasher<TStreamId> lowHasher,
 			IHasher<TStreamId> highHasher,
+			ILongHasher<TStreamId> longHasher,
 			INameIndex<TStreamId> streamNameIndex,
 			INameIndexConfirmer<TStreamId> streamNameIndexConfirmer,
 			INameIndex<TStreamId> eventTypeIndex,
@@ -261,6 +264,7 @@ namespace EventStore.Core.LogAbstraction {
 
 			LowHasher = lowHasher;
 			HighHasher = highHasher;
+			LongHasher = longHasher;
 			StreamNameIndex = streamNameIndex;
 			StreamNameIndexConfirmer = streamNameIndexConfirmer;
 			EventTypeIndex = eventTypeIndex;
@@ -288,6 +292,7 @@ namespace EventStore.Core.LogAbstraction {
 
 		public IHasher<TStreamId> LowHasher { get; }
 		public IHasher<TStreamId> HighHasher { get; }
+		public ILongHasher<TStreamId> LongHasher { get; }
 		public INameIndex<TStreamId> StreamNameIndex { get; }
 		public INameIndexConfirmer<TStreamId> StreamNameIndexConfirmer { get; }
 		public INameIndex<TStreamId> EventTypeIndex { get; }

@@ -31,8 +31,11 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 
 	// accumulator iterates through the log, spotting metadata records
 	// put in the data that the chunk and ptable scavenging require
-	public interface IMagicForAccumulator {
-		void Add(StreamName streamName);
+	public interface IMagicForAccumulator<TStreamId> {
+		//qq maybe prefer passing in a single
+		//datastructure to show that the position is that of the record
+		void Add(TStreamId streamId, long position);
+
 		// don't need to call this for both normal streams and corresponding metadata streams
 		// this also implies that the corresponding metadata stream is relevant to the scavenge.
 		//
@@ -55,7 +58,7 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		//                  that will do for now.
 		//    - else (no record)
 		//        - just add it
-		void Set(StreamName streamName, StreamData streamData);
+		void Set(TStreamId streamId, StreamData streamData);
 	}
 
 	public interface IMagicForCalculator {

@@ -4,7 +4,7 @@ using System.Linq;
 
 namespace EventStore.Core.TransactionLog.Scavenging {
 	// add things to the collision detector and it keeps a list of things that collided.
-	public class CollisionDetector<T> where T : IEquatable<T> {
+	public class CollisionDetector<T> {
 		// checks if the hash is in use before this item at this position. returns true if so.
 		// if returning true then out parameter is one of the items that hashes to that hash
 		public delegate bool HashInUseBefore(T item, long itemPosition, out T candidateCollidee);

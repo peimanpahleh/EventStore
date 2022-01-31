@@ -76,6 +76,12 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 	public abstract class RecordForAccumulator<TStreamId> {
 		//qq make sure to recycle these.
 		//qq prolly have readonly interfaces to implement, perhaps a method to return them for reuse
+		//qq some of these are pretty similar, wil lthey end up being different in the end
+		public class StandardRecord : RecordForAccumulator<TStreamId> {
+			public TStreamId StreamId { get; set; }
+			public long LogPosition { get; set; }
+		}
+
 		public class TombStone : RecordForAccumulator<TStreamId> {
 			public TStreamId StreamId { get; set; }
 		}
@@ -155,6 +161,14 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		//qqqqqq position or event number.. this will become clearer when we come to consume it.
 		// the position is more useful to the index
 		void Discard(TStreamId streamId, long position, int sizeInbytes);
+	}
+
+	public interface IIndexReaderForAccumulator<TStreamId> {
+		//qq definitely a similar here to the delegate defined by the collision detector..
+		// is it actually the same thing in need of a refactor? then the other is just a
+		// decorator pattern that adds memoisation. might need to pass the hash into
+		// collisiondetector.add, or let it hash it itself
+		bool HashInUseBefore(ulong hash, long postion, out TStreamId candidedateCollidee);
 	}
 
 	//qq name

@@ -6,7 +6,7 @@ using EventStore.Core.TransactionLog.Scavenging;
 using Xunit;
 
 namespace EventStore.Core.XUnit.Tests.Scavenge {
-	class MockHahser : ILongHasher<string> {
+	class MockHasher : ILongHasher<string> {
 		public ulong Hash(string x) =>
 			(ulong)(x.Length == 0 ? 0 : x[0].GetHashCode());
 	}
@@ -78,7 +78,7 @@ namespace EventStore.Core.XUnit.Tests.Scavenge {
 			Assert.NotNull(caseName);
 
 			var log = data.Select(x => x.StreamName).ToArray();
-			var hasher = new MockHahser();
+			var hasher = new MockHasher();
 
 			// index maps hashes to lists of log positions
 			var index = new Dictionary<ulong, List<int>>();

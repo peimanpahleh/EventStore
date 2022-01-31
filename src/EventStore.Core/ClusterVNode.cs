@@ -1174,14 +1174,28 @@ namespace EventStore.Core {
 			// STORAGE SCAVENGER
 			var newScavenge = true; //qq make configurable
 			if (newScavenge) {
-				var storageScavenger = new NewStorageScavenger<TStreamId>(
-					new InMemoryScavenger<TStreamId>(
-						Db,
-						_readIndex,
-						logFormat.Metastreams,
-						new MockChunkManagerForScavenge(),
-						logFormat.ChunkReaderForAccumulation,
-						logFormat.ChunkReaderForScavenge));
+				//qq iron this out, possibly more needs to be in the logformat, depending on what is
+				// affected by the log format ofc.
+				var accumulator = new InMemoryAccumulator<TStreamId>(
+					logFormat.LongHasher,
+					logFormat.Metastreams,
+					logFormat.ChunkReaderForAccumulation,
+					new InMemoryIndexReaderForAccumulator<TStreamId>());
+
+				var calculator = new InMemoryCalculator<TStreamId>(
+					new IndexForScavenge<TStreamId>(_readIndex));
+
+				var executor = new InMemoryExecutor<TStreamId>(
+					new MockChunkManagerForScavenge(), //qq mock
+					logFormat.ChunkReaderForScavenge);
+
+				var scavenger = new InMemoryScavenger<TStreamId>(
+					accumulator,
+					calculator,
+					executor,
+					Db);
+
+				var storageScavenger = new NewStorageScavenger<TStreamId>(scavenger);
 
 				_mainBus.Subscribe<ClientMessage.ScavengeDatabase>(storageScavenger);
 				_mainBus.Subscribe<ClientMessage.StopDatabaseScavenge>(storageScavenger);
