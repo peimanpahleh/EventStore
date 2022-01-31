@@ -5,8 +5,6 @@ using EventStore.Core.LogAbstraction;
 
 namespace EventStore.Core.TransactionLog.Scavenging {
 	public class InMemoryAccumulator<TStreamId> : IAccumulator<TStreamId> {
-		//qq prolly want to use the chunk bulk reader in here to avoid having to instantiate the records
-		//qq what state does this want to accumulate
 		private readonly Dictionary<TStreamId, StreamData> _dict =
 			new(EqualityComparer<TStreamId>.Default);
 		private readonly IMetastreamLookup<TStreamId> _metastreamLookup;
@@ -28,64 +26,70 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		public IScavengeState<TStreamId> ScavengeState => new InMemoryScavengeState<TStreamId>(_dict);
 
 
+		//qq condider what requirements this has of the chunkreader in terms of transactions
+		//qq are we expecting to read only committed records?
+		//qq are we expecting to read the records in commitPosition order?
+		//     (if so bulkreader might not be ideal)
+		//       or prepareposition order
+		//qq in fact we should probably do a end to end ponder of transactions
 		public void Accumulate(ScavengePoint scavengePoint) {
-			//qq we do need to do something for _every_ record so that we can get a full list of the hash collisions.
-
 			var records = _chunkReader.Read(startFromChunk: 0, scavengePoint);
 			foreach (var record in records) {
 				switch (record) {
-					case RecordForAccumulator<TStreamId>.StandardRecord x:
+					case RecordForAccumulator<TStreamId>.EventRecord x:
 						Accumulate(x);
 						break;
-					case RecordForAccumulator<TStreamId>.Metadata x:
+					case RecordForAccumulator<TStreamId>.MetadataRecord x:
 						Accumulate(x);
 						break;
-					case RecordForAccumulator<TStreamId>.TombStone x:
-						Accumulate(x);
-						break;
-					case RecordForAccumulator<TStreamId>.TimeStampMarker x:
+					case RecordForAccumulator<TStreamId>.TombStoneRecord x:
 						Accumulate(x);
 						break;
 					default:
 						throw new NotImplementedException(); //qq
 				}
-
 			}
 		}
 
-		private void Accumulate(RecordForAccumulator<TStreamId>.StandardRecord record) {
-			_magic.Add(record.StreamId, record.LogPosition);
-			//qqqqqqqqqq actually make this add, polly use the magic map
+		private void Accumulate(RecordForAccumulator<TStreamId>.EventRecord record) {
+			//qq hmm does this need to be the prepare log position, the commit log position, or, in fact, both?
+			_magic.NotifyForCollisions(record.StreamId, record.LogPosition);
 		}
 
-		private void Accumulate(RecordForAccumulator<TStreamId>.Metadata metadata) {
-			//qqqqqqqqqq actually make this add, polly use the magic map
-			var streamToScavenge = _metastreamLookup.OriginalStreamOf(metadata.StreamId);
+		private void Accumulate(RecordForAccumulator<TStreamId>.MetadataRecord record) {
+			_magic.NotifyForCollisions(record.StreamId, record.LogPosition);
+
+			var originalStream = _metastreamLookup.OriginalStreamOf(record.StreamId);
+
+			_magic.NotifyForScavengeableStreams(record.StreamId);
+			_magic.NotifyForScavengeableStreams(originalStream);
+
+			var streamData = _magic.GetStreamData(originalStream);
+			//qqqq set the new stream data, leave the harddeleted flag alone.
+			// consider if streamdata really wants to be immutable. also c# records not supported in v5
+			var newStreamData = streamData with {
+				MaxAge = null,
+				MaxCount = 345,
+				TruncateBefore = 567,
+			};
+			_magic.SetStreamData(originalStream, newStreamData);
 		}
 
-		private void Accumulate(RecordForAccumulator<TStreamId>.TombStone tombstone) {
-			//qqqqqqqqqq actually make this add, polly use the magic map
-			// set harddeleted on the streamdata
-			var streamToScavenge = tombstone.StreamId;
-			GetDataForStream(streamToScavenge, out var data);
-			var newData = data with { IsHardDeleted = true };
-			SetDataForStream(streamToScavenge, newData);
-			return;
+		private void Accumulate(RecordForAccumulator<TStreamId>.TombStoneRecord record) {
+			_magic.NotifyForCollisions(record.StreamId, record.LogPosition);
+			_magic.NotifyForScavengeableStreams(record.StreamId);
+
+			var streamData = _magic.GetStreamData(record.StreamId);
+			var newStreamData = streamData with { IsHardDeleted = true };
+			_magic.SetStreamData(record.StreamId, newStreamData);
 		}
 
-		private void Accumulate(RecordForAccumulator<TStreamId>.TimeStampMarker marker) {
-			//qqqqqqqqqq actually make this add, separate datastructure for the timestamps
-		}
-
-		private void GetDataForStream(TStreamId streamId, out StreamData streamData) {
-			if (_dict.TryGetValue(streamId, out streamData))
-				return;
-
-			streamData = StreamData.Empty;
-		}
-
-		private void SetDataForStream(TStreamId streamId, StreamData streamData) {
-			_dict[streamId] = streamData;
+		private void AccumulateTimeStamps(int ChunkNumber, DateTime createdAt) {
+			//qq call this. consider name
+			// actually make this add to magicmap, separate datastructure for the timestamps
+			// idea is to decide whether a record can be discarded due to maxage just
+			// by looking at its logposition (i.e. index-only)
+			// needs configurable leeway for clockskew
 		}
 	}
 }

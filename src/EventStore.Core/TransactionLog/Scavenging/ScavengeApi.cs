@@ -77,22 +77,19 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		//qq make sure to recycle these.
 		//qq prolly have readonly interfaces to implement, perhaps a method to return them for reuse
 		//qq some of these are pretty similar, wil lthey end up being different in the end
-		public class StandardRecord : RecordForAccumulator<TStreamId> {
+		public class EventRecord : RecordForAccumulator<TStreamId> {
 			public TStreamId StreamId { get; set; }
 			public long LogPosition { get; set; }
 		}
 
-		public class TombStone : RecordForAccumulator<TStreamId> {
+		public class TombStoneRecord : RecordForAccumulator<TStreamId> {
 			public TStreamId StreamId { get; set; }
+			public long LogPosition { get; set; }
 		}
 
-		public class TimeStampMarker : RecordForAccumulator<TStreamId> {
-			public int ChunkNumber { get; set; }
-			public DateTime CreatedAt { get; set; }
-		}
-
-		public class Metadata : RecordForAccumulator<TStreamId> {
+		public class MetadataRecord : RecordForAccumulator<TStreamId> {
 			public TStreamId StreamId { get; set; }
+			public long LogPosition { get; set; }
 		}
 	}
 

@@ -3,28 +3,31 @@ using System.Collections.Generic;
 using EventStore.Core.Index.Hashes;
 
 namespace EventStore.Core.TransactionLog.Scavenging {
+
 	public class InMemoryMagicMap<TStreamId> :
 		IMagicForAccumulator<TStreamId>,
 		IMagicForCalculator,
 		IMagicForExecutor {
 
-		CollisionDetector<TStreamId> _collisionDetector;
-		// these are what would be persisted
-//qq		private readonly Dictionary<StreamHash, StreamData> _noncollisions;
-//qq		private readonly Dictionary<StreamName, StreamData> _collisions;
+		private readonly CollisionDetector<TStreamId> _collisionDetector;
 
-		// these would just be in mem in proper implementation
+		// these are what would be persisted
+		private readonly InMemoryCollisionResolver<TStreamId, StreamHash, StreamData> _metadatas;
+		private readonly InMemoryCollisionResolver<TStreamId, StreamHash, DiscardPoint> _scavengeableStreams;
+
+		// these would just be in mem even in proper implementation
 		private readonly ILongHasher<TStreamId> _hasher;
 		private readonly IIndexReaderForAccumulator<TStreamId> _indexReaderForAccumulator;
-
-		//qq to save us having to look up the stream names repeatedly
-		// irl this would be a lru cache.
-		//qq		private readonly Dictionary<StreamHash, StreamName> _cacheOf;
 
 		public InMemoryMagicMap(
 			ILongHasher<TStreamId> hasher,
 			IIndexReaderForAccumulator<TStreamId> indexReaderForAccumulator) {
 
+			_metadatas = new();
+			_scavengeableStreams = new();
+
+			//qq to save us having to look up the stream names repeatedly
+			// irl this would be a lru cache.
 			var cache = new Dictionary<ulong, TStreamId>();
 
 			_hasher = hasher;
@@ -57,36 +60,58 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		// FOR ACCUMULATOR
 		//
 
-		public void Add(TStreamId streamId, long position) {
+		public void NotifyForCollisions(TStreamId streamId, long position) {
 			_collisionDetector.Add(streamId, position);
 		}
 
-		// this will set each time it finds something relevant to scavenge - metadata or tombstone.
-		public void Set(TStreamId streamId, StreamData streamData) {
-			var streamHash = _hasher.Hash(streamId);
+		public void NotifyForScavengeableStreams(TStreamId streamId) {
+			// register this stream as a scavengeable stream
+			//qq is it ok that this is clearing the discard point? probably...
+			// because the discard points have to be recalculated after accumulation
+			// anyway (i think).
+			//qq might this want a cache to make adding quick when it has already been added
+			// could it even share the cache that the collision detector uses?
+			_scavengeableStreams[streamId] = new();
+		}
 
-			throw new System.NotImplementedException();
+		public StreamData GetStreamData(TStreamId streamId) {
+			if (!_metadatas.TryGetValue(streamId, out var streamData))
+				streamData = StreamData.Empty;
+			return streamData;
+		}
+
+		public void SetStreamData(TStreamId streamId, StreamData streamData) {
+			_metadatas[streamId] = streamData;
 		}
 
 
-		public IEnumerable<(StreamHash, StreamData)> RelevantStreamsUncollided => throw new System.NotImplementedException();
 
-		public IEnumerable<(StreamName, StreamData)> RelevantStreamsCollided => throw new System.NotImplementedException();
+
+
+
+
+		//
+		//
+		//
+
+		public IEnumerable<(StreamHash, StreamData)> RelevantStreamsUncollided => throw new NotImplementedException();
+
+		public IEnumerable<(StreamName, StreamData)> RelevantStreamsCollided => throw new NotImplementedException();
 
 		public DiscardPoint GetDiscardPoint(StreamName streamName) {
-			throw new System.NotImplementedException();
+			throw new NotImplementedException();
 		}
 
 		public DiscardPoint GetDiscardPoint(StreamHash streamHash) {
-			throw new System.NotImplementedException();
+			throw new NotImplementedException();
 		}
 
 		public bool IsCollision(StreamHash streamHash) {
-			throw new System.NotImplementedException();
+			throw new NotImplementedException();
 		}
 
 		public void Set(StreamName streamName, DiscardPoint dp) {
-			throw new System.NotImplementedException();
+			throw new NotImplementedException();
 		}
 
 		public void Add(StreamName streamName) {
@@ -94,6 +119,3 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		}
 	}
 }
-//qq note, probably need to complain if the ptable is a 32bit table
-//qq maybe we need a collision free core that is just a map
-//qq just a thought, lots of the metadatas might be equal, we might be able to store each unique instance once. implementation detail.

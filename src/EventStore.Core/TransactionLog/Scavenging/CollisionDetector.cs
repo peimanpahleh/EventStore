@@ -15,6 +15,8 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		// store the values. could possibly store just the hashes instead but that would
 		// lose us information and it should be so rare that there are any collisions at all.
 		//qq for the real implementation make sure adding is idempotent
+		// consider whether this should be reponsible for its own storage, or maybe since
+		// there will be hardly any collisions we can just read the data out to store it separately
 		private readonly HashSet<T> _collisions;
 		
 		//qq will need something like this to tell where to continue from. maybe not in this class though
