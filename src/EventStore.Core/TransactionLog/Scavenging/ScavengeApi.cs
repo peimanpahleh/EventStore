@@ -28,7 +28,7 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		void Accumulate(ScavengePoint scavengePoint);
 		//qq got separate apis for adding and getting state cause they'll probably be done
 		// by different logical processes
-		IScavengeState<TStreamId> ScavengeState { get; }
+		IMagicForCalculator<TStreamId> ScavengeState { get; }
 	}
 
 	//qqqq consider api. consider name
@@ -41,7 +41,7 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 	// (typically) doing any further lookups or calculation.
 	public interface ICalculator<TStreamId> {
 		// processed so far.
-		void Calculate(ScavengePoint scavengePoint, IScavengeState<TStreamId> source);
+		void Calculate(ScavengePoint scavengePoint, IMagicForCalculator<TStreamId> source);
 		//qq for now having separate getter rather than returning from calculate
 		// might want it to be continuous, or to maybe process ones that have been
 		IScavengeInstructions<TStreamId> ScavengeInstructions { get; }
@@ -116,10 +116,13 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 	//qq the purpose of this datastructure is to narrow the scope of what needs to be
 	// calculated based on what we can glean by tailing the log,
 	// without doubling up on what we can easily look up later.
-	public interface IScavengeState<TStreamId> {
-		//
-		IEnumerable<(TStreamId, StreamData)> RelevantStreams { get; }
-	}
+	// for now IMagicForCalculator<TStreamId> is serving this purpose.
+	//public interface IScavengeState<TStreamId> {
+	//	//
+	//	IEnumerable<(TStreamId, StreamData)> RelevantStreams { get; }
+	//}
+
+
 
 	//qq this contains enough information about what needs to be removed from each
 	// chunk that we can decide whether to scavenge each one (based on some threshold)
@@ -143,21 +146,21 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		//qq int or long? necessarily bytes or rather accumulated weight, or maybe it can jsut be approx.
 		// maybe just event count will be sufficient if it helps us to not look up records
 		// currently we have to look them up anyway for hash collisions, so just run with that.
-		// later we may switch to record count if it helps save lookups - or the index may even be able to
-		// imply the size of the record (approximately?) once we have the '$all' stream index.
+		// later we may switch to record count if it helps save lookups - or the index may even be able
+		// to imply the size of the record (approximately?) once we have the '$all' stream index.
 		int NumRecordsToDiscard { get; }
 	}
 
 	//qq consider if we want to use this readonly pattern for the scavenge instructions too
-	public interface IChunkScavengeInstructions<TStreamId> : IReadOnlyChunkScavengeInstructions<TStreamId> {
+	public interface IChunkScavengeInstructions<TStreamId> :
+		IReadOnlyChunkScavengeInstructions<TStreamId> {
 		// we call this for each event that we want to discard
 		// probably it is better to list what we want to discard rather than what we want to keep
 		// because in a well scavenged log we will want to keep more than we want to remove
 		// in a typical scavenge.
 
-		//qqqqqq position or event number.. this will become clearer when we come to consume it.
-		// the position is more useful to the index
-		void Discard(TStreamId streamId, long position, int sizeInbytes);
+		//qq now that we dont have args here, perhaps it should be called 'increment' or similar
+		void Discard();
 	}
 
 	public interface IIndexReaderForAccumulator<TStreamId> {
@@ -168,16 +171,50 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		bool HashInUseBefore(ulong hash, long postion, out TStreamId candidedateCollidee);
 	}
 
+
+	public readonly struct IndexReadResultForScavenge {
+		public readonly long LogPosition;
+		public readonly long EventNumber;
+	}
 	//qq name
 	public interface IIndexForScavenge<TStreamId> {
-		//qqqqqq probably get rid of these two, just reading the stream forwards is enough
-		// these get the last event number for a stream according to particular bounds
-		long GetLastEventNumber(TStreamId streamId, long scavengePoint);
+		//qq maxposition  / positionlimit instead of scavengepoint?
+		//qq better name than 'stream'...
+		long GetLastEventNumber(IndexKeyThing<TStreamId> stream, long scavengePoint);
 
 		//qq name min age or maxage or 
 		//long GetLastEventNumber(TStreamId streamId, DateTime age);
 
-		EventRecord[] ReadStreamForward(TStreamId streamId, long fromEventNumber, int maxCount);
+		//qq maybe we can do better than allocating an array for the return
+		//qqqqq should take a scavengepoint/maxpos?
+		IndexReadResultForScavenge[] ReadStreamForward(
+			IndexKeyThing<TStreamId> stream,
+			long fromEventNumber,
+			int maxCount);
+	}
+
+	//qq consider name
+	public struct IndexKeyThing {
+		public static IndexKeyThing<TStreamId> CreateForHash<TStreamId>(ulong streamHash) {
+			return new IndexKeyThing<TStreamId>(true, default, streamHash);
+		}
+
+		public static IndexKeyThing<TStreamId> CreateForStreamId<TStreamId>(TStreamId streamId) {
+			return new IndexKeyThing<TStreamId>(true, streamId, default);
+		}
+	}
+
+	//qq consider explicit layout
+	public readonly struct IndexKeyThing<TStreamId> {
+		public readonly bool IsHash;
+		public readonly TStreamId StreamId;
+		public readonly ulong StreamHash;
+
+		public IndexKeyThing(bool isHash, TStreamId streamId, ulong streamHash) {
+			IsHash = isHash;
+			StreamId = streamId;
+			StreamHash = streamHash;
+		}
 	}
 
 	public interface ChunkTimeStampOptimisation {

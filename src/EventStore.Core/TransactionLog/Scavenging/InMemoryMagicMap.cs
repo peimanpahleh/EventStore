@@ -6,7 +6,7 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 
 	public class InMemoryMagicMap<TStreamId> :
 		IMagicForAccumulator<TStreamId>,
-		IMagicForCalculator,
+		IMagicForCalculator<TStreamId>,
 		IMagicForExecutor {
 
 		private readonly CollisionDetector<TStreamId> _collisionDetector;
@@ -91,12 +91,25 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 
 
 		//
-		//
+		// FOR CALCULATOR
 		//
 
 		public IEnumerable<(StreamHash, StreamData)> RelevantStreamsUncollided => throw new NotImplementedException();
 
-		public IEnumerable<(StreamName, StreamData)> RelevantStreamsCollided => throw new NotImplementedException();
+		public IEnumerable<(TStreamId, StreamData)> RelevantStreamsCollided => throw new NotImplementedException();
+
+		public void SetDiscardPoint(TStreamId streamId, DiscardPoint dp) {
+			throw new NotImplementedException();
+		}
+
+
+
+
+
+
+		//
+		// FOR EXECUTOR
+		//
 
 		public DiscardPoint GetDiscardPoint(StreamName streamName) {
 			throw new NotImplementedException();
@@ -107,10 +120,6 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		}
 
 		public bool IsCollision(StreamHash streamHash) {
-			throw new NotImplementedException();
-		}
-
-		public void Set(StreamName streamName, DiscardPoint dp) {
 			throw new NotImplementedException();
 		}
 

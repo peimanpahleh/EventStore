@@ -81,6 +81,21 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		//                not collde.
 		//             conclude no collision
 		//             TICK
+
+
+		//qqqqqqqqqqqqq consider the case that the records that the index references have been scavenged
+		// all of them? some of them?
+		// perhaps start with lookin up the largest event number cause its most likely to still be there
+		// but what if it isn't??
+		//   maybe we just try to load records one by one working backwards until we find one that still
+		//   exists (log a warning too probably because this will be a problem for performance)
+		//   and if none of them exist then thats the same as if a previous scavenge completed
+		//   and removed the entries from the index too.
+		//   for that matter, what if the scavenge has completed and removed the entries from the index too
+		//     maybe it will be ok, we won't register it as a collision yet but we will later if/when we
+		//     find the remaining events. but what if the last event is beyond the scavenge point, would
+		//     that be bad?
+
 		public void Add(T item, long itemPosition) {
 			_lastPosition = itemPosition;
 

@@ -10,8 +10,9 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 			eventNumber < Value;
 	}
 
+	//qq prolly dont need these once the dust settles
 	public readonly struct StreamHash {
-		public readonly long Value;
+		public readonly ulong Value;
 	}
 
 	public readonly struct StreamName {
@@ -73,17 +74,17 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		void SetStreamData(TStreamId streamId, StreamData streamData);
 	}
 
-	//qqqq this might _be_ IScavengeState
-	public interface IMagicForCalculator {
+	//qqqq this might _be_ IScavengeState. perhaps rename it
+	public interface IMagicForCalculator<TStreamId> {
 		// Calculator iterates through the relevant streams and their metadata
 		//qq note we dont have to _store_ the metadatas for the metadatastreams internally, we could store them separately.
 		//qq if this ever changes to return the stream name then we're in trouble cause it means we'd have to store them.
 		IEnumerable<(StreamHash, StreamData)> RelevantStreamsUncollided { get; }
-		IEnumerable<(StreamName, StreamData)> RelevantStreamsCollided { get; }
+		IEnumerable<(TStreamId, StreamData)> RelevantStreamsCollided { get; }
 
 		//qq we set a discard point for every relevant stream.
 		//qq we definitely need a streamname overload because there might be hash collisions and we need to store for both
-		void Set(StreamName streamName, DiscardPoint dp);
+		void SetDiscardPoint(TStreamId streamId, DiscardPoint dp);
 		// but we might only _have_ the stream name for streams that collided. if so have a streamhash overload too:
 		// void Set(StreamHash streamHash, DiscardPoint dp);
 	}

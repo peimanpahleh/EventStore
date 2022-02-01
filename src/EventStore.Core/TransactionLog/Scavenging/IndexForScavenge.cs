@@ -1,10 +1,9 @@
 ﻿using System;
-using System.Collections.Generic;
-using EventStore.Core.Data;
 using EventStore.Core.Services.Storage.ReaderIndex;
 
 namespace EventStore.Core.TransactionLog.Scavenging {
-	//qq for now lets keep this really simple and just use index reader. add support for the scavenge point limiting later.
+	//qq for now lets keep this really simple and just use index reader.
+	//add support for the scavenge point limiting later.
 	public class IndexForScavenge<TStreamId> : IIndexForScavenge<TStreamId> {
 		private readonly IReadIndex<TStreamId> _readIndex;
 
@@ -13,8 +12,15 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		}
 
 		//qq todo respect scavengepoint
-		public long GetLastEventNumber(TStreamId streamId, long scavengePoint) {
-			return _readIndex.GetStreamLastEventNumber(streamId);
+		public long GetLastEventNumber(IndexKeyThing<TStreamId> stream, long scavengePoint) {
+			if (stream.IsHash) {
+				throw new NotImplementedException();
+				//qq index only!
+				// return _readIndex.GetStreamLastEventNumber(stream.StreamHash);
+			} else {
+				// uses log to check for hash collisions
+				return _readIndex.GetStreamLastEventNumber(stream.StreamId);
+			}
 		}
 
 		//qq naiiive. pobably want to chop, or if we dis something like tracked the min
@@ -32,15 +38,25 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		//	return 0;
 		//}
 
-		public EventRecord[] ReadStreamForward(TStreamId streamId, long fromEventNumber, int maxCount) {
-			var result = _readIndex.ReadStreamEventsForward(
-				"", //qq
-				streamId,
-				fromEventNumber,
-				maxCount);
+		public IndexReadResultForScavenge[] ReadStreamForward(
+			IndexKeyThing<TStreamId> stream,
+			long fromEventNumber,
+			int maxCount) {
 
-			//qq do we need to look at the other things like .Result, .IsEndOfStream etc
-			return result.Records;
+			if (stream.IsHash) {
+				//qq index only!
+				throw new NotImplementedException();
+			} else {
+				// uses log to check for hash collisions
+				var result = _readIndex.ReadStreamEventsForward(
+					"", //qq
+					stream.StreamId,
+					fromEventNumber,
+					maxCount);
+
+				//qq do we need to look at the other things like .Result, .IsEndOfStream etc
+				return null; //qq	result.Records;
+			}
 		}
 	}
 
@@ -63,7 +79,8 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 	//		// we probably want to start by getting the 
 
 	//		//qqqqq this is surprisingly awkward.
-	//		// - but maybe it will get much less awkward with the new indexes, and much quicker (no hash collisions)
+	//		// - but maybe it will get much less awkward with the new indexes, and much quicker
+	//		          (no hash collisions)
 	//		//   in which case maybe we should just delegate this to the index for now so that
 	//		//   we dont have to change the scavenge logic later.
 	//		// - we could generalize the code in index reader to take a 'up to' log point

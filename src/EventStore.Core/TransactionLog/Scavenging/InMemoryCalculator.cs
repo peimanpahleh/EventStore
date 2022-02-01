@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using EventStore.Core.Data;
 using EventStore.Core.TransactionLog.Chunks;
 
 namespace EventStore.Core.TransactionLog.Scavenging {
@@ -16,40 +15,56 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		public IScavengeInstructions<TStreamId> ScavengeInstructions =>
 			new InMemoryScavengeInstructions<TStreamId>();
 
-		public void Calculate(ScavengePoint scavengePoint, IScavengeState<TStreamId> source) {
-			foreach (var (streamId, streamData) in source.RelevantStreams) {
-				CalculateStream(scavengePoint, streamId, streamData);
+		// iterate through all the scavengeable streams. determine the discard point for each one.
+		// for the ones that do not collide, we can do this in the index-only.
+		// for the ones that do collide
+		//qqq for the ones that do collide can we just not bother to scavenge it for now, but we
+		// do want to prove out that it will work later.
+		//qq do we need to calculate a discard point for every stream, or can we keep using a discard
+		// point that was calculated on a previous scavenge? the discard point
+		public void Calculate(ScavengePoint scavengePoint, IMagicForCalculator<TStreamId> source) {
+			//qq the order that the calculate the discard points in isn't important is it?
+			foreach (var (streamId, streamData) in source.RelevantStreamsCollided) {
+				CalculateDiscardPoint(
+					scavengePoint,
+					IndexKeyThing.CreateForStreamId(streamId),
+					streamData);
+			}
+
+			foreach (var (streamHash, streamData) in source.RelevantStreamsUncollided) {
+				CalculateDiscardPoint(
+					scavengePoint,
+					IndexKeyThing.CreateForHash<TStreamId>(streamHash.Value),
+					streamData);
 			}
 		}
 
-		private void CalculateStream(
+		private void CalculateDiscardPoint(
 			ScavengePoint scavengePoint,
-			TStreamId streamId,
+			IndexKeyThing<TStreamId> stream,
 			StreamData streamData) {
 
 			//qq fundamentally we iterate by stream because thats how the scavenge criteria are organised
-			// but we want to end up with output per chunk (logical chunk to begin with) so that we can
-			// decide per chunk whether it should be scavenged yet
-			//qq note this means subsequent calculations will want to add to existing ChunkScavengeInstructions
+			// but our output is
+			//   - a map that lets us look up a decision point for every stream (this is the same acros
+			//         all the chunks. //qq will subsequent scavenges need to recalculate this from
+			//         scratch or will some of the discard points still be known to be applicable?
+			//   - and a count of the number of records to discard in each chunk.
+			//         so that we can decide whether to scavenge a chunk at all.
+			//         //qq will subsequent scavenges count from 0 for each chunk, or somehow pick up
+			//         from what was already counted.
+			//         //qqqq if we stored the previous and current discard point then can tell
+			//         from the index which events are new to scavenge this time - if that helps us
+			//         significantly with anything?
+			//
 
-			//qq so this will go something like
-			// 1. figure out what is the minimum event we want to keep for this stream
-			//    IMPORTANT, in a minute we are going to want to know what the _actual_ positions
-			//    to discard are, so that we can attribute them to the right chunk.
-			//    so its' OK to look those up as we go.
-			//
-			//
-			// SO lets go about it a different way, lets read the stream through in slices.
-			// we do need the addresses of each one, but we dont actually need the events except
-			// to resolve hash collisions, so there will be optimisations here later when we
-			// no longer need to resolve hash collisions. for now we can be naive and just look up
-			// every event in the stream starting with the first until we get to one that we
-			// dont want to discard.
+			// SO: read the index in slices. only need to look up the actual records to resolve
+			// hash collisions.
 
 			const int maxCount = 100; //qq what would be sensible?
 			var fromEventNumber = 0L;
 			while (true) {
-				var slice = _index.ReadStreamForward(streamId, fromEventNumber, maxCount);
+				var slice = _index.ReadStreamForward(stream, fromEventNumber, maxCount);
 				//qq naive, we dont need to check every event, we could check the last one
 				// and if that is to be discarded then we can discard everything in this slice.
 				foreach (var evt in slice) {
@@ -58,17 +73,19 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 					// (we are reading through the stream so we know what the last one is)
 					//qqqqq gotta respect the scavenge point also. do that out here or
 					//  let shouldkeep do it. we want to keep everything on or after the scavenge point
-					// if shouldkeep doesn't so it, rename it to indicate the scope of what it does calculate.
+					// if shouldkeep doesn't so it, rename it to indicate the scope of what it does
+					// calculate.
 					if (ShouldKeep(
 							scavengePoint,
-							streamId,
+							stream,
 							streamData,
-							evt)) {
+							evt.EventNumber,
+							evt.LogPosition)) {
 						// found the first one to keep. we are done discarding.
 						goto Done;
 					}
 
-					Discard(streamId, evt);
+					Discard(evt.LogPosition);
 				}
 
 				if (slice.Length < maxCount) {
@@ -90,9 +107,10 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 
 		private bool ShouldKeep(
 			ScavengePoint scavengePoint,
-			TStreamId streamId,
+			IndexKeyThing<TStreamId> stream,
 			StreamData streamData,
-			EventRecord evt) {
+			long eventNumber,
+			long logPosition) {
 			//qqqq important, we want to discard metadata records when they aren't the latest ones
 			// for their stream. but we dont write explicit metadata records for metadata streams, so
 			// we wont have accumulated it.
@@ -100,16 +118,16 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 			// things from its metadta stream
 
 			//qq check/test these carefully obviously
-			if (DiscardBecauseHardDeleted(streamData, evt))
+			if (DiscardBecauseHardDeleted(streamData, eventNumber: eventNumber))
 				return false;
 
-			if (IsExpiredByTruncateBefore(streamData, evt))
+			if (IsExpiredByTruncateBefore(streamData, eventNumber: eventNumber))
 				return false;
 
-			if (IsExpiredByMaxAge(scavengePoint, streamData, evt))
+			if (IsExpiredByMaxAge(scavengePoint, streamData, logPosition: logPosition))
 				return false;
 
-			if (IsExpiredByMaxCount(scavengePoint, streamId, streamData, evt))
+			if (IsExpiredByMaxCount(scavengePoint, stream, streamData, eventNumber: eventNumber))
 				return false;
 
 			return true;
@@ -117,56 +135,82 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 
 		static bool DiscardBecauseHardDeleted(
 			StreamData streamData,
-			EventRecord evt) {
+			long eventNumber) {
 
 			// keep tombstone
-			return streamData.IsHardDeleted && evt.EventNumber < long.MaxValue;
+			return streamData.IsHardDeleted && eventNumber < long.MaxValue;
 		}
 
 		static bool IsExpiredByTruncateBefore(
 			StreamData streamData,
-			EventRecord evt) {
+			long eventNumber) {
 
 			if (streamData.TruncateBefore == null)
 				return false;
 
-			var expired = evt.EventNumber < streamData.TruncateBefore.Value;
+			var expired = eventNumber < streamData.TruncateBefore.Value;
 			return expired;
 		}
 
+		//qq nb: index-only shortcut for maxage works for transactions too because it is the
+		// prepare timestamp that we use not the commit timestamp.
 		static bool IsExpiredByMaxAge(
 			ScavengePoint scavengePoint,
 			StreamData streamData,
-			EventRecord evt) {
+			long logPosition) {
 
 			if (streamData.MaxAge == null)
 				return false;
 
-			var expires = evt.TimeStamp + streamData.MaxAge;
-			return expires <= scavengePoint.EffectiveNow;
+			//qq a couple of these methods calculate the chunk number, consider passing it in directly
+			var chunkNumber = (int)(logPosition / TFConsts.ChunkSize);
+
+			// We can discard the event when it is as old or older than the cutoff
+			var cutoff = scavengePoint.EffectiveNow - streamData.MaxAge.Value;
+
+			// but we weaken the condition to say we only discard when the whole chunk is older than
+			// the cutoff (which implies that the event certainly is)
+			// the whole chunk is older than the cutoff only when the next chunk started before the cutoff
+			var nextChunkCreatedAt = GetChunkCreatedAt(chunkNumber + 1);
+			//qq ^ consider if there might not be a next chunk
+			// say we closed the last chunk (this one) exactly on a boundary and haven't created the next one yet.
+
+			// however, consider clock skew. we want to avoid the case where we accidentally discard a
+			// record that we should have kept, because the chunk stamp said discard but the real record
+			// stamp would have said keep.
+			// for this to happen the records stamp would have to be newer than the chunk stamp.
+			// add a maxSkew to the nextChunkCreatedAt to make it discard less.
+			var nextChunkCreatedAtIncludingSkew = nextChunkCreatedAt + TimeSpan.FromMinutes(1); //qq make configurable
+			var discard = nextChunkCreatedAtIncludingSkew <= cutoff;
+			return discard;
+
+			DateTime GetChunkCreatedAt(int chunkNumber) {
+				throw new NotImplementedException(); //qq
+			}
 		}
 
 		bool IsExpiredByMaxCount(
 			ScavengePoint scavengePoint,
-			TStreamId streamId,
+			IndexKeyThing<TStreamId> stream,
 			StreamData streamData,
-			EventRecord evt) {
+			long eventNumber) {
 
 			if (streamData.MaxCount == null)
 				return false;
 
-			// say evt.EventNumber is 3
+			// say eventNumber is 3
 			// and streamData.MaxCount = 2
 			// then this event will expire when we write event number 5
 			// because the live events at that point will be events 4 and 5.
 
-			var expires = evt.EventNumber + streamData.MaxCount;
+			var expires = eventNumber + streamData.MaxCount;
 
 			//qq the stream really should exist but what will happen here if it doesn't
 			//qqqq we're going to hit this a lot, some kind of cache would be in order
-			//qqqqqqqqqqqqqq BUT we are iterating through the stream so maybe 
+			//qqqqqqqqqqqqqq BUT we are iterating through the stream so maybe we can
+			// do something cunning
 			var lastEventNumber = _index.GetLastEventNumber(
-				streamId,
+				stream,
 				scavengePoint.Position);
 
 			return expires <= lastEventNumber;
@@ -174,20 +218,16 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 
 		//qq found one to discard!
 		// figure out which chunk it is for and note it down
-		private void Discard(TStreamId streamId, EventRecord evt) {
-			var chunkNumber = (int)(evt.LogPosition / TFConsts.ChunkSize);
+		//qq chunk instructions are per logical chunk (for now)
+		private void Discard(long logPosition) {
+			var chunkNumber = (int)(logPosition / TFConsts.ChunkSize);
 
 			if (!_instructionsByChunk.TryGetValue(chunkNumber, out var chunkInstructions)) {
 				chunkInstructions = new InMemoryChunkScavengeInstructions<TStreamId>();
 				_instructionsByChunk[chunkNumber] = chunkInstructions;
 			}
 
-			chunkInstructions.Discard(
-				streamId: streamId,
-				//qqq considering whether this should be event number instead 
-				position: evt.LogPosition,
-				//qq approx. we might need an stracted sizer for the logformat actually.
-				sizeInbytes: evt.Data.Length + evt.Metadata.Length);
+			chunkInstructions.Discard();
 		}
 	}
 }

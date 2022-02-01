@@ -1,18 +1,6 @@
 ﻿using System.Collections.Generic;
-using System.Linq;
 
 namespace EventStore.Core.TransactionLog.Scavenging {
-	public class InMemoryScavengeState<TStreamId> : IScavengeState<TStreamId> {
-		private readonly IDictionary<TStreamId, StreamData> _dict;
-
-		public InMemoryScavengeState(IDictionary<TStreamId, StreamData> dict) {
-			_dict = dict;
-		}
-
-		public IEnumerable<(TStreamId, StreamData)> RelevantStreams =>
-			_dict.Select(kvp => (kvp.Key, kvp.Value));
-	}
-
 	//qq this may end up being a wrapper around the magic map and not a memory specific implementation
 	// at all.
 	//qq instructions are not necessarily the right name for this now.
@@ -37,7 +25,7 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 
 		public int NumRecordsToDiscard { get; private set; }
 
-		public void Discard(TStreamId streamId, long position, int sizeInbytes) {
+		public void Discard() {
 			throw new System.NotImplementedException();
 		}
 	}

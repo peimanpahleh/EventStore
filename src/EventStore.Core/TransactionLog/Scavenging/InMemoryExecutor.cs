@@ -1,5 +1,4 @@
 ﻿using System;
-using EventStore.Core.TransactionLog.Chunks;
 
 namespace EventStore.Core.TransactionLog.Scavenging {
 	public class InMemoryExecutor<TStreamId> : IExecutor<TStreamId> {
@@ -34,8 +33,8 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 				return;
 			}
 
-			//qq the other reason we might want to not scanvenge this chunk is if the posmap would make it
-			// bigger
+			//qq the other reason we might want to not scanvenge this chunk is if the posmap would make
+			// it bigger
 			// than the original... limited concern because of the threshold above BUT we could address
 			// by either
 			//   - improving the posmap 
@@ -48,6 +47,10 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 			// if all the prepares for the commit are in this chunk (typically the case) and they are all
 			// scavenged, then we can remove the commit as well i think. this is probably what the old
 			// scavenge does. check
+
+			// old scavenge says 'never delete the very first prepare in a transaction'
+			// hopefully we can account for that here? although maybe it means our count of
+			// records to scavenge that was calculated index only might end up being approximate.
 
 			/* Set a scavenge point
 			 * scavenge range or time
@@ -98,7 +101,8 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 					// if so consider using the regular reader.
 				}
 			}
-			// 2. read through it, keeping and discarding as necessary. probably no additional lookups at this point
+			// 2. read through it, keeping and discarding as necessary. probably no additional lookups at
+			// this point
 			// 3. write the posmap
 			// 4. finalise the chunk
 			// 5. swap it in to the chunkmanager
