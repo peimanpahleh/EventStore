@@ -570,9 +570,9 @@ namespace EventStore.Core {
 			_eventStoreClusterClientCache = new EventStoreClusterClientCache(_mainQueue,
 				(endpoint, publisher) =>
 					new EventStoreClusterClient(
-						new UriBuilder(options.Application.Insecure ? Uri.UriSchemeHttp : Uri.UriSchemeHttps,
-							endpoint.GetHost(), endpoint.GetPort()).Uri, publisher, _internalServerCertificateValidator,
-						_certificateSelector));
+						options.Application.Insecure ? Uri.UriSchemeHttp : Uri.UriSchemeHttps,
+						endpoint, options.Cluster.DiscoverViaDns ? options.Cluster.ClusterDns : null,
+						publisher, _internalServerCertificateValidator, _certificateSelector));
 
 			_mainBus.Subscribe<ClusterClientMessage.CleanCache>(_eventStoreClusterClientCache);
 			_mainBus.Subscribe<SystemMessage.SystemInit>(_eventStoreClusterClientCache);
@@ -1342,7 +1342,7 @@ namespace EventStore.Core {
 			_startup = new ClusterVNodeStartup<TStreamId>(_subsystems, _mainQueue, monitoringQueue, _mainBus, _workersHandler,
 				_authenticationProvider, httpAuthenticationProviders, _authorizationProvider, _readIndex,
 				options.Application.MaxAppendSize, TimeSpan.FromMilliseconds(options.Database.WriteTimeoutMs),
-				_httpService);
+				_httpService, options.Cluster.DiscoverViaDns ? options.Cluster.ClusterDns : null);
 			_mainBus.Subscribe<SystemMessage.SystemReady>(_startup);
 			_mainBus.Subscribe<SystemMessage.BecomeShuttingDown>(_startup);
 		}

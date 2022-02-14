@@ -165,7 +165,7 @@ namespace EventStore.Core.Services.Replication {
 				Guid.NewGuid(),
 				_tcpDispatcher,
 				_publisher,
-				leaderEndPoint.GetHost(),
+				leaderEndPoint.GetTargetHost(),
 				leaderEndPoint,
 				_connector,
 				_useSsl,
