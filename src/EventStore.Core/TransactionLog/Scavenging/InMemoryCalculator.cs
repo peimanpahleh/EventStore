@@ -22,30 +22,24 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		// do want to prove out that it will work later.
 		//qq do we need to calculate a discard point for every stream, or can we keep using a discard
 		// point that was calculated on a previous scavenge? the discard point
-		public void Calculate(ScavengePoint scavengePoint, IMagicForCalculator<TStreamId> source) {
-			//qq the order that the calculate the discard points in isn't important is it?
-			foreach (var (streamId, streamData) in source.RelevantStreamsCollided) {
-				CalculateDiscardPoint(
-					scavengePoint,
-					IndexKeyThing.CreateForStreamId(streamId),
-					streamData);
-			}
+		public void Calculate(ScavengePoint scavengePoint, IMagicForCalculator<TStreamId> scavengeState) {
+			//qq the order that we calculate the discard points in isn't important is it?
+			foreach (var (stream, streamData) in scavengeState.RelevantStreams) {
+				var dp = CalculateDiscardPointForStream(
+					stream,
+					streamData,
+					scavengePoint);
 
-			foreach (var (streamHash, streamData) in source.RelevantStreamsUncollided) {
-				CalculateDiscardPoint(
-					scavengePoint,
-					IndexKeyThing.CreateForHash<TStreamId>(streamHash.Value),
-					streamData);
+				scavengeState.SetDiscardPoint(stream, dp);
 			}
 		}
 
-		private void CalculateDiscardPoint(
-			ScavengePoint scavengePoint,
+		private DiscardPoint CalculateDiscardPointForStream(
 			IndexKeyThing<TStreamId> stream,
-			StreamData streamData) {
+			StreamData streamData,
+			ScavengePoint scavengePoint) {
 
-			//qq fundamentally we iterate by stream because thats how the scavenge criteria are organised
-			// but our output is
+			//qq our output is
 			//   - a map that lets us look up a decision point for every stream (this is the same acros
 			//         all the chunks. //qq will subsequent scavenges need to recalculate this from
 			//         scratch or will some of the discard points still be known to be applicable?
@@ -58,12 +52,18 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 			//         significantly with anything?
 			//
 
-			// SO: read the index in slices. only need to look up the actual records to resolve
-			// hash collisions.
+			// SO: read the stream from the index forward. in slices (since 1bn events is too much for
+			// one go).
+			//  - iterate through them calling discard for each one that we are discarding
+			//    so that each chunk knows how many records are getting discarded from it.
+			//
 
-			const int maxCount = 100; //qq what would be sensible?
+			//qq prolly grab the latesteventnumber out here
+
+			const int maxCount = 100; //qq what would be sensible? probably pretty large
 			var fromEventNumber = 0L;
 			while (true) {
+				//qq limit the read to the scavengepoint too?
 				var slice = _index.ReadStreamForward(stream, fromEventNumber, maxCount);
 				//qq naive, we dont need to check every event, we could check the last one
 				// and if that is to be discarded then we can discard everything in this slice.
@@ -82,7 +82,7 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 							evt.EventNumber,
 							evt.LogPosition)) {
 						// found the first one to keep. we are done discarding.
-						goto Done;
+						return new DiscardPoint(123); //qqqqqq
 					}
 
 					Discard(evt.LogPosition);
@@ -102,7 +102,8 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 				fromEventNumber += slice.Length;
 			}
 
-			Done:;
+			//qq need to set the discard point.
+			return new DiscardPoint(123); //qqqqqq
 		}
 
 		private bool ShouldKeep(
@@ -216,7 +217,6 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 			return expires <= lastEventNumber;
 		}
 
-		//qq found one to discard!
 		// figure out which chunk it is for and note it down
 		//qq chunk instructions are per logical chunk (for now)
 		private void Discard(long logPosition) {

@@ -80,6 +80,10 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 			return streamData;
 		}
 
+		looks // something has to decide whether to store this as a collision or as a hash
+			  //and that decision could be made by the collision resolver itself
+			  // or we could pass in a IndexKeyThing that decides for it??
+			  //qq 
 		public void SetStreamData(TStreamId streamId, StreamData streamData) {
 			_metadatas[streamId] = streamData;
 		}
@@ -94,12 +98,15 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 		// FOR CALCULATOR
 		//
 
-		public IEnumerable<(StreamHash, StreamData)> RelevantStreamsUncollided => throw new NotImplementedException();
+		public IEnumerable<(IndexKeyThing<TStreamId>, StreamData)> RelevantStreams {
+			get {
+				foreach (var x in _collisionDetector.)
+				throw new NotImplementedException();
+			}
+		}
 
-		public IEnumerable<(TStreamId, StreamData)> RelevantStreamsCollided => throw new NotImplementedException();
-
-		public void SetDiscardPoint(TStreamId streamId, DiscardPoint dp) {
-			throw new NotImplementedException();
+		public void SetDiscardPoint(IndexKeyThing<TStreamId> stream, DiscardPoint dp) {
+			_scavengeableStreams[stream] = dp;
 		}
 
 

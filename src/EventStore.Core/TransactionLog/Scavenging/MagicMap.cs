@@ -4,6 +4,10 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 	public readonly struct DiscardPoint {
 		public readonly long Value;
 
+		public DiscardPoint(long value) {
+			Value = value;
+		}
+
 		//qq depends on whether the DP is the first event to keep
 		// or the last event to discard. which in turn will depend on which is easier to generate
 		public bool ShouldDiscard(long eventNumber) =>
@@ -78,15 +82,10 @@ namespace EventStore.Core.TransactionLog.Scavenging {
 	public interface IMagicForCalculator<TStreamId> {
 		// Calculator iterates through the relevant streams and their metadata
 		//qq note we dont have to _store_ the metadatas for the metadatastreams internally, we could store them separately.
-		//qq if this ever changes to return the stream name then we're in trouble cause it means we'd have to store them.
-		IEnumerable<(StreamHash, StreamData)> RelevantStreamsUncollided { get; }
-		IEnumerable<(TStreamId, StreamData)> RelevantStreamsCollided { get; }
+		IEnumerable<(IndexKeyThing<TStreamId> stream, StreamData)> RelevantStreams { get; }
 
 		//qq we set a discard point for every relevant stream.
-		//qq we definitely need a streamname overload because there might be hash collisions and we need to store for both
-		void SetDiscardPoint(TStreamId streamId, DiscardPoint dp);
-		// but we might only _have_ the stream name for streams that collided. if so have a streamhash overload too:
-		// void Set(StreamHash streamHash, DiscardPoint dp);
+		void SetDiscardPoint(IndexKeyThing<TStreamId> stream, DiscardPoint dp);
 	}
 
 
